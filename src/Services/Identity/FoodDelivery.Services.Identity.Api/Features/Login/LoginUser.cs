@@ -70,18 +70,10 @@ public static class LoginUserEndpoint
     {
         group.MapPost("/login", async (LoginUserCommand command, IMediator mediator, CancellationToken ct) =>
         {
-            try
-            {
-                var result = await mediator.Send(command, ct);
-                return Results.Ok(result);
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                return Results.Unauthorized();
-            }
+            var result = await mediator.Send(command, ct);
+            return Results.Ok(result);
         })
-        .WithName("LoginUser")
-        .WithOpenApi();
+        .WithName("LoginUser");
 
         return group;
     }

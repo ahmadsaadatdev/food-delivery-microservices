@@ -37,14 +37,14 @@ public sealed class UserRegisteredIntegrationEventHandler(CustomersDbContext db,
 {
     public async Task Handle(UserRegisteredIntegrationEvent message)
     {
-        if (await db.Customers.AnyAsync(x => x.IdentityId == message.UserId))
+        // Idempotent: if Postgres write succeeded but Mongo upsert failed, retries must still project the read model.
+        var customer = await db.Customers.FirstOrDefaultAsync(x => x.IdentityId == message.UserId);
+        if (customer is null)
         {
-            return;
+            customer = Customer.CreateFromIdentity(message.UserId, message.Email, message.FirstName, message.LastName);
+            db.Customers.Add(customer);
+            await db.SaveChangesAsync();
         }
-
-        var customer = Customer.CreateFromIdentity(message.UserId, message.Email, message.FirstName, message.LastName);
-        db.Customers.Add(customer);
-        await db.SaveChangesAsync();
 
         await readStore.UpsertAsync(new CustomerReadModel
         {

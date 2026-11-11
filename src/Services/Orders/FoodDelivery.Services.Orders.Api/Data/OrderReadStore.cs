@@ -37,4 +37,7 @@ public sealed class OrderReadStore(IMongoClient client)
 
     public async Task<IReadOnlyList<OrderReadModel>> ListAsync(CancellationToken ct = default) =>
         await Collection.Find(FilterDefinition<OrderReadModel>.Empty).SortByDescending(x => x.CreatedAtUtc).ToListAsync(ct);
+
+    public Task DeleteAsync(Guid id, CancellationToken ct = default) =>
+        Collection.DeleteOneAsync(x => x.Id == id, ct);
 }

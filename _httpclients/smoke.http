@@ -12,10 +12,11 @@ Content-Type: application/json
   "lastName": "Rezaei"
 }
 
-### Customers (after event processing)
+### Customers (after event) — use customer.id (NOT register userId) for orders
 GET http://localhost:5200/api/v1/customers
 
 ### Create order
+# customerId must be Customers.Id from GET /customers
 POST http://localhost:5300/api/v1/orders
 Content-Type: application/json
 

@@ -3,6 +3,7 @@ using FoodDelivery.BuildingBlocks.CQRS;
 using FoodDelivery.BuildingBlocks.Messaging;
 using FoodDelivery.Services.Catalogs.Api.Data;
 using FoodDelivery.Services.Catalogs.Api.Domain;
+using Microsoft.EntityFrameworkCore;
 using Wolverine;
 
 namespace FoodDelivery.Services.Catalogs.Api.Features.Products;
@@ -46,7 +47,7 @@ public sealed class CreateProductHandler(CatalogDbContext db, ProductReadStore r
         }, cancellationToken);
 
         await bus.PublishAsync(new ProductCreatedIntegrationEvent(
-            product.Id, product.Name, product.Price, product.Stock));
+            product.Id, product.Name, product.Description, product.Price, product.Stock));
 
         return new CreateProductResult(product.Id);
     }
@@ -72,6 +73,7 @@ public sealed class GetProductByIdHandler(ProductReadStore readStore)
     }
 }
 
+// Same-service create already upserts Mongo; keep this handler for idempotent redelivery only.
 public sealed class ProductCreatedIntegrationEventHandler(ProductReadStore readStore)
 {
     public Task Handle(ProductCreatedIntegrationEvent message) =>
@@ -79,10 +81,44 @@ public sealed class ProductCreatedIntegrationEventHandler(ProductReadStore readS
         {
             Id = message.ProductId,
             Name = message.Name,
-            Description = string.Empty,
+            Description = message.Description,
             Price = message.Price,
             Stock = message.Stock
         });
+}
+
+public sealed class OrderCreatedIntegrationEventHandler(CatalogDbContext db, ProductReadStore readStore)
+{
+    public async Task Handle(OrderCreatedIntegrationEvent message)
+    {
+        // Claim the order first so redelivery cannot double-decrement stock.
+        var markerId = $"order-stock:{message.OrderId:N}";
+        if (!await readStore.TryMarkProcessedAsync(markerId))
+        {
+            return;
+        }
+
+        foreach (var line in message.Lines)
+        {
+            var product = await db.Products.FirstOrDefaultAsync(x => x.Id == line.ProductId);
+            if (product is null)
+            {
+                continue;
+            }
+
+            product.UpdateStock(Math.Max(0, product.Stock - line.Quantity));
+            await readStore.UpsertAsync(new ProductReadModel
+            {
+                Id = product.Id,
+                Name = product.Name,
+                Description = product.Description,
+                Price = product.Price,
+                Stock = product.Stock
+            });
+        }
+
+        await db.SaveChangesAsync();
+    }
 }
 
 public static class ProductEndpoints

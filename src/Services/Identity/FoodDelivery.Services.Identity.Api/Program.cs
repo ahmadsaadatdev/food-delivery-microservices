@@ -1,5 +1,6 @@
 using System.Text;
 using FoodDelivery.BuildingBlocks;
+using FoodDelivery.BuildingBlocks.Web;
 using FoodDelivery.BuildingBlocks.Messaging;
 using FoodDelivery.Services.Identity.Api.Data;
 using FoodDelivery.Services.Identity.Api.Features.Login;
@@ -10,6 +11,7 @@ using Microsoft.IdentityModel.Tokens;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Configuration.AddJsonFile("appsettings.Development.local.json", optional: true, reloadOnChange: true);
 
 builder.AddServiceDefaults();
 builder.AddNpgsqlDbContext<IdentityDbContext>("identitydb");
@@ -38,6 +40,7 @@ builder.Services.AddAuthorization();
 builder.Host.UseFoodDeliveryMessaging(builder.Configuration, "identity", typeof(Program).Assembly);
 
 var app = builder.Build();
+app.UseFoodDeliveryExceptionHandling();
 app.UseCors();
 
 app.MapOpenApi();

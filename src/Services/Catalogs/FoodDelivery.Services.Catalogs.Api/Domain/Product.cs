@@ -44,6 +44,21 @@ public sealed class Product : Entity<Guid>
 
         Stock = stock;
     }
+
+    public void DecreaseStock(int quantity)
+    {
+        if (quantity <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(quantity));
+        }
+
+        if (Stock < quantity)
+        {
+            throw new InvalidOperationException($"Insufficient stock for product '{Name}'.");
+        }
+
+        Stock -= quantity;
+    }
 }
 
 public sealed record ProductCreatedDomainEvent(Guid ProductId, string Name, decimal Price, int Stock) : DomainEvent;

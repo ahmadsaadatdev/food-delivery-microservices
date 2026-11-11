@@ -92,10 +92,9 @@ public static class RegisterUserEndpoint
         group.MapPost("/register", async (RegisterUserCommand command, IMediator mediator, CancellationToken ct) =>
         {
             var result = await mediator.Send(command, ct);
-            return Results.Created($"/api/v1/identity/users/{result.UserId}", result);
+            return Results.Ok(result);
         })
-        .WithName("RegisterUser")
-        .WithOpenApi();
+        .WithName("RegisterUser");
 
         return group;
     }

@@ -26,6 +26,8 @@ public static class WolverineRabbitMqExtensions
             var rabbit = configuration.GetConnectionString("rabbitmq");
             if (string.IsNullOrWhiteSpace(rabbit))
             {
+                // Local queues only — integration events will not cross process boundaries.
+                opts.PublishAllMessages().Locally();
                 return;
             }
 

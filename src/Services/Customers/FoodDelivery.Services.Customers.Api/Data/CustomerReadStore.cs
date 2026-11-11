@@ -28,4 +28,7 @@ public sealed class CustomerReadStore(IMongoClient client)
 
     public async Task<IReadOnlyList<CustomerReadModel>> ListAsync(CancellationToken ct = default) =>
         await Collection.Find(FilterDefinition<CustomerReadModel>.Empty).ToListAsync(ct);
+
+    public Task DeleteAsync(Guid id, CancellationToken ct = default) =>
+        Collection.DeleteOneAsync(x => x.Id == id, ct);
 }

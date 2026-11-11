@@ -11,6 +11,7 @@ public sealed record UserRegisteredIntegrationEvent(
 public sealed record ProductCreatedIntegrationEvent(
     Guid ProductId,
     string Name,
+    string Description,
     decimal Price,
     int Stock) : IntegrationEvent;
 

@@ -1,0 +1,29 @@
+<Solution>
+  <Folder Name="/src/" />
+  <Folder Name="/src/ApiGateway/">
+    <Project Path="src/ApiGateway/FoodDelivery.ApiGateway/FoodDelivery.ApiGateway.csproj" />
+  </Folder>
+  <Folder Name="/src/Aspire/">
+    <Project Path="src/Aspire/FoodDelivery.AppHost/FoodDelivery.AppHost.csproj" />
+    <Project Path="src/Aspire/FoodDelivery.ServiceDefaults/FoodDelivery.ServiceDefaults.csproj" />
+  </Folder>
+  <Folder Name="/src/BuildingBlocks/">
+    <Project Path="src/BuildingBlocks/FoodDelivery.BuildingBlocks/FoodDelivery.BuildingBlocks.csproj" />
+  </Folder>
+  <Folder Name="/src/Services/" />
+  <Folder Name="/src/Services/Catalogs/">
+    <Project Path="src/Services/Catalogs/FoodDelivery.Services.Catalogs.Api/FoodDelivery.Services.Catalogs.Api.csproj" />
+  </Folder>
+  <Folder Name="/src/Services/Customers/">
+    <Project Path="src/Services/Customers/FoodDelivery.Services.Customers.Api/FoodDelivery.Services.Customers.Api.csproj" />
+  </Folder>
+  <Folder Name="/src/Services/Identity/">
+    <Project Path="src/Services/Identity/FoodDelivery.Services.Identity.Api/FoodDelivery.Services.Identity.Api.csproj" />
+  </Folder>
+  <Folder Name="/src/Services/Orders/">
+    <Project Path="src/Services/Orders/FoodDelivery.Services.Orders.Api/FoodDelivery.Services.Orders.Api.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/FoodDelivery.ArchitectureTests/FoodDelivery.ArchitectureTests.csproj" />
+  </Folder>
+</Solution>

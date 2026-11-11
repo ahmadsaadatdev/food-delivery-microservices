@@ -1,0 +1,4 @@
+CREATE DATABASE catalogsdb;
+CREATE DATABASE customersdb;
+CREATE DATABASE identitydb;
+CREATE DATABASE ordersdb;

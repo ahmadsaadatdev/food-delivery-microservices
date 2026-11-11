@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <title>Food Delivery Microservices</title>
+  <style>
+    :root { --bg:#0f1419; --card:#1a222c; --text:#e8eef5; --accent:#3dd6c6; --muted:#8b9bb0; }
+    body { margin:0; font-family:"Segoe UI",Tahoma,sans-serif; background:linear-gradient(160deg,#0f1419,#182230 50%,#101820); color:var(--text); min-height:100vh; }
+    main { max-width:980px; margin:0 auto; padding:40px 20px; }
+    h1 { font-size:2rem; margin:0 0 8px; }
+    p { color:var(--muted); }
+    .grid { display:grid; gap:16px; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); margin:28px 0; }
+    a.card { display:block; background:var(--card); border:1px solid #2a3644; border-radius:14px; padding:18px; text-decoration:none; color:inherit; }
+    a.card:hover { border-color:var(--accent); }
+    .accent { color:var(--accent); }
+    pre { background:#0b1015; border-radius:12px; padding:16px; overflow:auto; border:1px solid #243040; direction:ltr; text-align:left; }
+    button { background:var(--accent); color:#042018; border:0; border-radius:10px; padding:10px 16px; font-weight:700; cursor:pointer; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Food Delivery <span class="accent">.NET 10</span></h1>
+  <p>میکروسرویس‌ها روی PostgreSQL محلی (postgres / CHANGE_ME) و MongoDB اجرا شده‌اند.</p>
+  <div class="grid">
+    <a class="card" href="http://localhost:5100/scalar" target="_blank">Catalogs API UI</a>
+    <a class="card" href="http://localhost:5200/scalar" target="_blank">Customers API UI</a>
+    <a class="card" href="http://localhost:5300/scalar" target="_blank">Orders API UI</a>
+    <a class="card" href="http://localhost:5400/scalar" target="_blank">Identity API UI</a>
+  </div>
+  <button type="button" onclick="loadAll()">بارگذاری داده‌های زنده</button>
+  <h2>Products</h2><pre id="products">...</pre>
+  <h2>Customers</h2><pre id="customers">...</pre>
+  <h2>Orders</h2><pre id="orders">...</pre>
+</main>
+<script>
+async function loadAll() {
+  const [p, c, o] = await Promise.all([
+    fetch("http://localhost:5100/api/v1/products").then((r) => r.json()),
+    fetch("http://localhost:5200/api/v1/customers").then((r) => r.json()),
+    fetch("http://localhost:5300/api/v1/orders").then((r) => r.json())
+  ]);
+  products.textContent = JSON.stringify(p, null, 2);
+  customers.textContent = JSON.stringify(c, null, 2);
+  orders.textContent = JSON.stringify(o, null, 2);
+}
+loadAll();
+</script>
+</body>
+</html>

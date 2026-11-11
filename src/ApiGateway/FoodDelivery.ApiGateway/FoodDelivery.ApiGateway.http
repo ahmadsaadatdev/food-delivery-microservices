@@ -1,0 +1,6 @@
+@FoodDelivery.ApiGateway_HostAddress = http://localhost:5201
+
+GET {{FoodDelivery.ApiGateway_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

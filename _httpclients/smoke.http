@@ -1,0 +1,32 @@
+### Catalogs
+GET http://localhost:5100/api/v1/products
+
+### Identity register
+POST http://localhost:5400/api/v1/identity/register
+Content-Type: application/json
+
+{
+  "email": "ali@example.com",
+  "password": "Pass123!",
+  "firstName": "Ali",
+  "lastName": "Rezaei"
+}
+
+### Customers (after event processing)
+GET http://localhost:5200/api/v1/customers
+
+### Create order
+POST http://localhost:5300/api/v1/orders
+Content-Type: application/json
+
+{
+  "customerId": "{{customerId}}",
+  "lines": [
+    {
+      "productId": "{{productId}}",
+      "productName": "Margherita Pizza",
+      "quantity": 2,
+      "unitPrice": 12.50
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: fd-postgres
+    environment:
+      POSTGRES_USER: food
+      POSTGRES_PASSWORD: "CHANGE_ME"
+      POSTGRES_DB: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - fd_pg:/var/lib/postgresql/data
+      - ./init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql:ro
+
+  mongodb:
+    image: mongo:7
+    container_name: fd-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - fd_mongo:/data/db
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: fd-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: food
+      RABBITMQ_DEFAULT_PASS: food
+
+  redis:
+    image: redis:7
+    container_name: fd-redis
+    ports:
+      - "6379:6379"
+
+volumes:
+  fd_pg:
+  fd_mongo:

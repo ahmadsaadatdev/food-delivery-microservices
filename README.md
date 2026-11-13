@@ -66,4 +66,3 @@ dotnet run --project src/Services/Orders/FoodDelivery.Services.Orders.Api --laun
 | CQRS | MediatR + FluentValidation |
 | Auth | JWT Bearer |
 
-Inspired by [mehdihadeli/food-delivery-microservices](https://github.com/mehdihadeli/food-delivery-microservices), rewritten lean for .NET 10.

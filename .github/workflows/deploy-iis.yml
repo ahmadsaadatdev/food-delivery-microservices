@@ -1,0 +1,89 @@
+name: Deploy to IIS
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - Ahmad_Saadat
+  workflow_dispatch:
+
+concurrency:
+  group: iis-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Build & Deploy IIS
+    # Self-hosted Windows runner on the IIS machine (path C:\FoodDeveryServer).
+    runs-on: [self-hosted, Windows]
+
+    env:
+      DEPLOY_ROOT: C:\FoodDeveryServer
+      PUBLISH_ROOT: ${{ github.workspace }}\artifacts\iis-publish
+      PUBLIC_PORT: "5050"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        run: dotnet restore FoodDelivery.slnx
+
+      - name: Build
+        run: dotnet build FoodDelivery.slnx -c Release --no-restore
+
+      - name: Publish services
+        shell: pwsh
+        run: |
+          $out = $env:PUBLISH_ROOT
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+
+          $projects = @(
+            @{ Proj = "src/ApiGateway/FoodDelivery.ApiGateway/FoodDelivery.ApiGateway.csproj"; Folder = "Gateway" },
+            @{ Proj = "src/Services/Catalogs/FoodDelivery.Services.Catalogs.Api/FoodDelivery.Services.Catalogs.Api.csproj"; Folder = "Catalogs" },
+            @{ Proj = "src/Services/Customers/FoodDelivery.Services.Customers.Api/FoodDelivery.Services.Customers.Api.csproj"; Folder = "Customers" },
+            @{ Proj = "src/Services/Orders/FoodDelivery.Services.Orders.Api/FoodDelivery.Services.Orders.Api.csproj"; Folder = "Orders" },
+            @{ Proj = "src/Services/Identity/FoodDelivery.Services.Identity.Api/FoodDelivery.Services.Identity.Api.csproj"; Folder = "Identity" }
+          )
+
+          foreach ($p in $projects) {
+            $dest = Join-Path $out $p.Folder
+            Write-Host "Publishing $($p.Folder) -> $dest"
+            dotnet publish $p.Proj -c Release -o $dest --no-build
+            if ($LASTEXITCODE -ne 0) { throw "Publish failed: $($p.Folder)" }
+          }
+
+          Copy-Item "deployments/iis/appsettings.Production.json" (Join-Path $out "Gateway\appsettings.Production.json") -Force
+          Copy-Item "deployments/iis/deploy.ps1" (Join-Path $out "deploy.ps1") -Force
+          Copy-Item "deployments/iis/appsettings.Production.json" (Join-Path $out "appsettings.Production.json") -Force
+
+      - name: Deploy to IIS (C:\FoodDeveryServer :5050)
+        shell: pwsh
+        run: |
+          $script = Join-Path $env:GITHUB_WORKSPACE "deployments\iis\deploy.ps1"
+          & $script -SourceRoot $env:PUBLISH_ROOT -DeployRoot $env:DEPLOY_ROOT -PublicPort ([int]$env:PUBLIC_PORT)
+
+      - name: Smoke check gateway
+        shell: pwsh
+        run: |
+          Start-Sleep -Seconds 5
+          $urls = @(
+            "http://127.0.0.1:$($env:PUBLIC_PORT)/gateway-info",
+            "http://127.0.0.1:$($env:PUBLIC_PORT)/demo",
+            "http://127.0.0.1:$($env:PUBLIC_PORT)/catalogs/api/v1/products"
+          )
+          foreach ($url in $urls) {
+            try {
+              $res = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 30
+              Write-Host "OK $($res.StatusCode) $url"
+            }
+            catch {
+              Write-Warning "Smoke failed for $url : $($_.Exception.Message)"
+            }
+          }

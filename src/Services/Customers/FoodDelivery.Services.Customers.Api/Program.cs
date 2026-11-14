@@ -13,7 +13,10 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddJsonFile("appsettings.Development.local.json", optional: true, reloadOnChange: true);
 
 builder.AddServiceDefaults();
-builder.AddNpgsqlDbContext<CustomersDbContext>("customersdb");
+builder.AddNpgsqlDbContext<CustomersDbContext>("customersdb", configureDbContextOptions: options =>
+{
+    options.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
+});
 builder.AddMongoDBClient("mongodb");
 builder.Services.AddBuildingBlocks(typeof(Program).Assembly);
 builder.Services.AddScoped<CustomerReadStore>();
@@ -23,6 +26,7 @@ builder.Host.UseFoodDeliveryMessaging(builder.Configuration, "customers", typeof
 
 var app = builder.Build();
 app.UseFoodDeliveryExceptionHandling();
+app.UseFoodDeliveryPerformance();
 app.UseCors();
 
 app.MapOpenApi();
@@ -43,6 +47,7 @@ using (var scope = app.Services.CreateScope())
 
     await db.Database.EnsureCreatedAsync();
     await MongoReadiness.WaitAsync(mongo);
+    await readStore.EnsureIndexesAsync();
 
     var writeCustomers = await db.Customers.AsNoTracking().ToListAsync();
     var readCustomers = await readStore.ListAsync();

@@ -3,6 +3,8 @@ using FoodDelivery.BuildingBlocks.CQRS;
 using FoodDelivery.BuildingBlocks.Messaging;
 using FoodDelivery.Services.Orders.Api.Data;
 using FoodDelivery.Services.Orders.Api.Domain;
+using Microsoft.AspNetCore.OutputCaching;
+using Microsoft.Extensions.Caching.Memory;
 using Wolverine;
 
 namespace FoodDelivery.Services.Orders.Api.Features.Orders;
@@ -40,8 +42,12 @@ public sealed class CreateOrderValidator : AbstractValidator<CreateOrderCommand>
     }
 }
 
-public sealed class CreateOrderHandler(OrdersDbContext db, OrderReadStore readStore, IMessageBus bus)
-    : ICommandHandler<CreateOrderCommand, CreateOrderResult>
+public sealed class CreateOrderHandler(
+    OrdersDbContext db,
+    OrderReadStore readStore,
+    IMessageBus bus,
+    IMemoryCache cache,
+    IOutputCacheStore outputCache) : ICommandHandler<CreateOrderCommand, CreateOrderResult>
 {
     public async Task<CreateOrderResult> Handle(CreateOrderCommand request, CancellationToken cancellationToken)
     {
@@ -70,6 +76,8 @@ public sealed class CreateOrderHandler(OrdersDbContext db, OrderReadStore readSt
         };
 
         await readStore.UpsertAsync(readModel, cancellationToken);
+        cache.Remove("orders:list");
+        await outputCache.EvictByTagAsync("orders", cancellationToken);
 
         await bus.PublishAsync(new OrderCreatedIntegrationEvent(
             order.Id,
@@ -81,13 +89,17 @@ public sealed class CreateOrderHandler(OrdersDbContext db, OrderReadStore readSt
     }
 }
 
-public sealed class GetOrdersHandler(OrderReadStore readStore)
+public sealed class GetOrdersHandler(OrderReadStore readStore, IMemoryCache cache)
     : IQueryHandler<GetOrdersQuery, IReadOnlyList<OrderDto>>
 {
     public async Task<IReadOnlyList<OrderDto>> Handle(GetOrdersQuery request, CancellationToken cancellationToken)
     {
-        var items = await readStore.ListAsync(cancellationToken);
-        return items.Select(Map).ToList();
+        return await cache.GetOrCreateAsync("orders:list", async entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(15);
+            var items = await readStore.ListAsync(cancellationToken);
+            return (IReadOnlyList<OrderDto>)items.Select(Map).ToList();
+        }) ?? [];
     }
 
     internal static OrderDto Map(OrderReadModel x) =>
@@ -116,13 +128,15 @@ public static class OrderEndpoints
         });
 
         group.MapGet("/", async (IMediator mediator, CancellationToken ct) =>
-            Results.Ok(await mediator.Send(new GetOrdersQuery(), ct)));
+            Results.Ok(await mediator.Send(new GetOrdersQuery(), ct)))
+            .CacheOutput("orders");
 
         group.MapGet("/{id:guid}", async (Guid id, IMediator mediator, CancellationToken ct) =>
         {
             var result = await mediator.Send(new GetOrderByIdQuery(id), ct);
             return result is null ? Results.NotFound() : Results.Ok(result);
-        });
+        })
+        .CacheOutput("orders");
 
         return group;
     }

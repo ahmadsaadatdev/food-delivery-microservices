@@ -11,10 +11,35 @@ public sealed class CustomerReadModel
     public string? Phone { get; set; }
 }
 
-public sealed class CustomerReadStore(IMongoClient client)
+public sealed class CustomerReadStore
 {
-    private IMongoCollection<CustomerReadModel> Collection =>
-        client.GetDatabase("food_delivery_customers").GetCollection<CustomerReadModel>("customers_read");
+    private readonly Lazy<IMongoCollection<CustomerReadModel>> _collection;
+
+    public CustomerReadStore(IMongoClient client)
+    {
+        _collection = new(() =>
+            client.GetDatabase("food_delivery_customers").GetCollection<CustomerReadModel>("customers_read"));
+    }
+
+    private IMongoCollection<CustomerReadModel> Collection => _collection.Value;
+
+    public async Task EnsureIndexesAsync(CancellationToken ct = default)
+    {
+        var indexes = new[]
+        {
+            new CreateIndexModel<CustomerReadModel>(
+                Builders<CustomerReadModel>.IndexKeys.Ascending(x => x.Id),
+                new CreateIndexOptions { Unique = true, Name = "ux_customers_read_id" }),
+            new CreateIndexModel<CustomerReadModel>(
+                Builders<CustomerReadModel>.IndexKeys.Ascending(x => x.IdentityId),
+                new CreateIndexOptions { Unique = true, Name = "ux_customers_read_identity" }),
+            new CreateIndexModel<CustomerReadModel>(
+                Builders<CustomerReadModel>.IndexKeys.Ascending(x => x.Email),
+                new CreateIndexOptions { Unique = true, Name = "ux_customers_read_email" })
+        };
+
+        await Collection.Indexes.CreateManyAsync(indexes, cancellationToken: ct);
+    }
 
     public Task UpsertAsync(CustomerReadModel model, CancellationToken ct = default) =>
         Collection.ReplaceOneAsync(
@@ -24,7 +49,7 @@ public sealed class CustomerReadStore(IMongoClient client)
             ct);
 
     public async Task<CustomerReadModel?> GetAsync(Guid id, CancellationToken ct = default) =>
-        await Collection.Find(x => x.Id == id).FirstOrDefaultAsync(ct);
+        await Collection.Find(x => x.Id == id).Limit(1).FirstOrDefaultAsync(ct);
 
     public async Task<IReadOnlyList<CustomerReadModel>> ListAsync(CancellationToken ct = default) =>
         await Collection.Find(FilterDefinition<CustomerReadModel>.Empty).ToListAsync(ct);

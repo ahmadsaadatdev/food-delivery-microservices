@@ -14,7 +14,10 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddJsonFile("appsettings.Development.local.json", optional: true, reloadOnChange: true);
 
 builder.AddServiceDefaults();
-builder.AddNpgsqlDbContext<IdentityDbContext>("identitydb");
+builder.AddNpgsqlDbContext<IdentityDbContext>("identitydb", configureDbContextOptions: options =>
+{
+    options.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
+});
 builder.Services.AddBuildingBlocks(typeof(Program).Assembly);
 builder.Services.AddOpenApi();
 builder.Services.AddCors(o => o.AddDefaultPolicy(p => p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod()));
@@ -41,6 +44,7 @@ builder.Host.UseFoodDeliveryMessaging(builder.Configuration, "identity", typeof(
 
 var app = builder.Build();
 app.UseFoodDeliveryExceptionHandling();
+app.UseFoodDeliveryPerformance();
 app.UseCors();
 
 app.MapOpenApi();

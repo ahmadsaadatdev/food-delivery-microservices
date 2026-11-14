@@ -13,6 +13,7 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
         {
             entity.ToTable("products");
             entity.HasKey(x => x.Id);
+            entity.HasIndex(x => x.Name);
             entity.Property(x => x.Name).HasMaxLength(200).IsRequired();
             entity.Property(x => x.Description).HasMaxLength(2000);
             entity.Property(x => x.Price).HasPrecision(18, 2);

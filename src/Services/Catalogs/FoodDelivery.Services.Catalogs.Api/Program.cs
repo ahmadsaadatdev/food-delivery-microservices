@@ -14,7 +14,10 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddJsonFile("appsettings.Development.local.json", optional: true, reloadOnChange: true);
 
 builder.AddServiceDefaults();
-builder.AddNpgsqlDbContext<CatalogDbContext>("catalogsdb");
+builder.AddNpgsqlDbContext<CatalogDbContext>("catalogsdb", configureDbContextOptions: options =>
+{
+    options.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
+});
 builder.AddMongoDBClient("mongodb");
 builder.Services.AddBuildingBlocks(typeof(Program).Assembly);
 builder.Services.AddScoped<ProductReadStore>();
@@ -24,6 +27,7 @@ builder.Host.UseFoodDeliveryMessaging(builder.Configuration, "catalogs", typeof(
 
 var app = builder.Build();
 app.UseFoodDeliveryExceptionHandling();
+app.UseFoodDeliveryPerformance();
 app.UseCors();
 
 app.MapOpenApi();
@@ -50,6 +54,7 @@ using (var scope = app.Services.CreateScope())
     var readStore = scope.ServiceProvider.GetRequiredService<ProductReadStore>();
     await db.Database.EnsureCreatedAsync();
     await MongoReadiness.WaitAsync(mongo);
+    await readStore.EnsureIndexesAsync();
 
     if (!await db.Products.AnyAsync())
     {
@@ -64,22 +69,17 @@ using (var scope = app.Services.CreateScope())
     var readProducts = await readStore.ListAsync();
     var writeIds = writeProducts.Select(x => x.Id).ToHashSet();
 
-    foreach (var stale in readProducts.Where(x => !writeIds.Contains(x.Id)))
-    {
-        await readStore.DeleteAsync(stale.Id);
-    }
+    var staleIds = readProducts.Where(x => !writeIds.Contains(x.Id)).Select(x => x.Id);
+    await readStore.DeleteManyAsync(staleIds);
 
-    foreach (var product in writeProducts)
+    await readStore.BulkUpsertAsync(writeProducts.Select(product => new ProductReadModel
     {
-        await readStore.UpsertAsync(new ProductReadModel
-        {
-            Id = product.Id,
-            Name = product.Name,
-            Description = product.Description,
-            Price = product.Price,
-            Stock = product.Stock
-        });
-    }
+        Id = product.Id,
+        Name = product.Name,
+        Description = product.Description,
+        Price = product.Price,
+        Stock = product.Stock
+    }));
 }
 
 app.Run();

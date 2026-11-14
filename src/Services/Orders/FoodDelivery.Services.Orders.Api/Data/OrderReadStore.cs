@@ -20,10 +20,35 @@ public sealed class OrderLineReadModel
     public decimal UnitPrice { get; set; }
 }
 
-public sealed class OrderReadStore(IMongoClient client)
+public sealed class OrderReadStore
 {
-    private IMongoCollection<OrderReadModel> Collection =>
-        client.GetDatabase("food_delivery_orders").GetCollection<OrderReadModel>("orders_read");
+    private readonly Lazy<IMongoCollection<OrderReadModel>> _collection;
+
+    public OrderReadStore(IMongoClient client)
+    {
+        _collection = new(() =>
+            client.GetDatabase("food_delivery_orders").GetCollection<OrderReadModel>("orders_read"));
+    }
+
+    private IMongoCollection<OrderReadModel> Collection => _collection.Value;
+
+    public async Task EnsureIndexesAsync(CancellationToken ct = default)
+    {
+        var indexes = new[]
+        {
+            new CreateIndexModel<OrderReadModel>(
+                Builders<OrderReadModel>.IndexKeys.Ascending(x => x.Id),
+                new CreateIndexOptions { Unique = true, Name = "ux_orders_read_id" }),
+            new CreateIndexModel<OrderReadModel>(
+                Builders<OrderReadModel>.IndexKeys.Descending(x => x.CreatedAtUtc),
+                new CreateIndexOptions { Name = "ix_orders_read_created" }),
+            new CreateIndexModel<OrderReadModel>(
+                Builders<OrderReadModel>.IndexKeys.Ascending(x => x.CustomerId),
+                new CreateIndexOptions { Name = "ix_orders_read_customer" })
+        };
+
+        await Collection.Indexes.CreateManyAsync(indexes, cancellationToken: ct);
+    }
 
     public Task UpsertAsync(OrderReadModel model, CancellationToken ct = default) =>
         Collection.ReplaceOneAsync(
@@ -33,10 +58,12 @@ public sealed class OrderReadStore(IMongoClient client)
             ct);
 
     public async Task<OrderReadModel?> GetAsync(Guid id, CancellationToken ct = default) =>
-        await Collection.Find(x => x.Id == id).FirstOrDefaultAsync(ct);
+        await Collection.Find(x => x.Id == id).Limit(1).FirstOrDefaultAsync(ct);
 
     public async Task<IReadOnlyList<OrderReadModel>> ListAsync(CancellationToken ct = default) =>
-        await Collection.Find(FilterDefinition<OrderReadModel>.Empty).SortByDescending(x => x.CreatedAtUtc).ToListAsync(ct);
+        await Collection.Find(FilterDefinition<OrderReadModel>.Empty)
+            .SortByDescending(x => x.CreatedAtUtc)
+            .ToListAsync(ct);
 
     public Task DeleteAsync(Guid id, CancellationToken ct = default) =>
         Collection.DeleteOneAsync(x => x.Id == id, ct);

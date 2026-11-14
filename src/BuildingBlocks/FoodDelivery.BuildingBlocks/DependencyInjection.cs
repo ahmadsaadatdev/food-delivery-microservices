@@ -1,6 +1,8 @@
 using System.Reflection;
 using FluentValidation;
+using FoodDelivery.BuildingBlocks.Auth;
 using FoodDelivery.BuildingBlocks.CQRS;
+using FoodDelivery.BuildingBlocks.Web;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -19,6 +21,8 @@ public static class DependencyInjection
         services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblies(scanAssemblies));
         services.AddValidatorsFromAssemblies(scanAssemblies);
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
+        services.AddSingleton<JwtTokenService>();
+        services.AddFoodDeliveryPerformance();
 
         return services;
     }

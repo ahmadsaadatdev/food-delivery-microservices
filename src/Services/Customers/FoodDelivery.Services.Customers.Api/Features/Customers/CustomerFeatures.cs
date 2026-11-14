@@ -1,9 +1,10 @@
-using FluentValidation;
 using FoodDelivery.BuildingBlocks.CQRS;
 using FoodDelivery.BuildingBlocks.Messaging;
 using FoodDelivery.Services.Customers.Api.Data;
 using FoodDelivery.Services.Customers.Api.Domain;
+using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace FoodDelivery.Services.Customers.Api.Features.Customers;
 
@@ -11,13 +12,19 @@ public sealed record GetCustomersQuery : IQuery<IReadOnlyList<CustomerDto>>;
 public sealed record GetCustomerByIdQuery(Guid Id) : IQuery<CustomerDto?>;
 public sealed record CustomerDto(Guid Id, Guid IdentityId, string Email, string FullName, string? Phone);
 
-public sealed class GetCustomersHandler(CustomerReadStore readStore)
+public sealed class GetCustomersHandler(CustomerReadStore readStore, IMemoryCache cache)
     : IQueryHandler<GetCustomersQuery, IReadOnlyList<CustomerDto>>
 {
     public async Task<IReadOnlyList<CustomerDto>> Handle(GetCustomersQuery request, CancellationToken cancellationToken)
     {
-        var items = await readStore.ListAsync(cancellationToken);
-        return items.Select(x => new CustomerDto(x.Id, x.IdentityId, x.Email, x.FullName, x.Phone)).ToList();
+        return await cache.GetOrCreateAsync("customers:list", async entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(30);
+            var items = await readStore.ListAsync(cancellationToken);
+            return (IReadOnlyList<CustomerDto>)items
+                .Select(x => new CustomerDto(x.Id, x.IdentityId, x.Email, x.FullName, x.Phone))
+                .ToList();
+        }) ?? [];
     }
 }
 
@@ -33,12 +40,19 @@ public sealed class GetCustomerByIdHandler(CustomerReadStore readStore)
     }
 }
 
-public sealed class UserRegisteredIntegrationEventHandler(CustomersDbContext db, CustomerReadStore readStore)
+public sealed class UserRegisteredIntegrationEventHandler(
+    CustomersDbContext db,
+    CustomerReadStore readStore,
+    IMemoryCache cache,
+    IOutputCacheStore outputCache)
 {
     public async Task Handle(UserRegisteredIntegrationEvent message)
     {
         // Idempotent: if Postgres write succeeded but Mongo upsert failed, retries must still project the read model.
-        var customer = await db.Customers.FirstOrDefaultAsync(x => x.IdentityId == message.UserId);
+        var customer = await db.Customers
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.IdentityId == message.UserId);
+
         if (customer is null)
         {
             customer = Customer.CreateFromIdentity(message.UserId, message.Email, message.FirstName, message.LastName);
@@ -53,6 +67,9 @@ public sealed class UserRegisteredIntegrationEventHandler(CustomersDbContext db,
             Email = customer.Email,
             FullName = $"{customer.FirstName} {customer.LastName}"
         });
+
+        cache.Remove("customers:list");
+        await outputCache.EvictByTagAsync("customers", CancellationToken.None);
     }
 }
 
@@ -61,13 +78,15 @@ public static class CustomerEndpoints
     public static RouteGroupBuilder MapCustomerEndpoints(this RouteGroupBuilder group)
     {
         group.MapGet("/", async (IMediator mediator, CancellationToken ct) =>
-            Results.Ok(await mediator.Send(new GetCustomersQuery(), ct)));
+            Results.Ok(await mediator.Send(new GetCustomersQuery(), ct)))
+            .CacheOutput("customers");
 
         group.MapGet("/{id:guid}", async (Guid id, IMediator mediator, CancellationToken ct) =>
         {
             var result = await mediator.Send(new GetCustomerByIdQuery(id), ct);
             return result is null ? Results.NotFound() : Results.Ok(result);
-        });
+        })
+        .CacheOutput("customers");
 
         return group;
     }

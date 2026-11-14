@@ -3,7 +3,9 @@ using FoodDelivery.BuildingBlocks.CQRS;
 using FoodDelivery.BuildingBlocks.Messaging;
 using FoodDelivery.Services.Catalogs.Api.Data;
 using FoodDelivery.Services.Catalogs.Api.Domain;
+using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Wolverine;
 
 namespace FoodDelivery.Services.Catalogs.Api.Features.Products;
@@ -28,8 +30,12 @@ public sealed class CreateProductValidator : AbstractValidator<CreateProductComm
     }
 }
 
-public sealed class CreateProductHandler(CatalogDbContext db, ProductReadStore readStore, IMessageBus bus)
-    : ICommandHandler<CreateProductCommand, CreateProductResult>
+public sealed class CreateProductHandler(
+    CatalogDbContext db,
+    ProductReadStore readStore,
+    IMessageBus bus,
+    IMemoryCache cache,
+    IOutputCacheStore outputCache) : ICommandHandler<CreateProductCommand, CreateProductResult>
 {
     public async Task<CreateProductResult> Handle(CreateProductCommand request, CancellationToken cancellationToken)
     {
@@ -46,6 +52,8 @@ public sealed class CreateProductHandler(CatalogDbContext db, ProductReadStore r
             Stock = product.Stock
         }, cancellationToken);
 
+        await ProductCache.InvalidateAsync(cache, outputCache, cancellationToken);
+
         await bus.PublishAsync(new ProductCreatedIntegrationEvent(
             product.Id, product.Name, product.Description, product.Price, product.Stock));
 
@@ -53,13 +61,19 @@ public sealed class CreateProductHandler(CatalogDbContext db, ProductReadStore r
     }
 }
 
-public sealed class GetProductsHandler(ProductReadStore readStore)
+public sealed class GetProductsHandler(ProductReadStore readStore, IMemoryCache cache)
     : IQueryHandler<GetProductsQuery, IReadOnlyList<ProductDto>>
 {
     public async Task<IReadOnlyList<ProductDto>> Handle(GetProductsQuery request, CancellationToken cancellationToken)
     {
-        var items = await readStore.ListAsync(cancellationToken);
-        return items.Select(x => new ProductDto(x.Id, x.Name, x.Description, x.Price, x.Stock)).ToList();
+        return await cache.GetOrCreateAsync(ProductCache.ListKey, async entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(30);
+            var items = await readStore.ListAsync(cancellationToken);
+            return (IReadOnlyList<ProductDto>)items
+                .Select(x => new ProductDto(x.Id, x.Name, x.Description, x.Price, x.Stock))
+                .ToList();
+        }) ?? [];
     }
 }
 
@@ -69,15 +83,21 @@ public sealed class GetProductByIdHandler(ProductReadStore readStore)
     public async Task<ProductDto?> Handle(GetProductByIdQuery request, CancellationToken cancellationToken)
     {
         var item = await readStore.GetAsync(request.Id, cancellationToken);
-        return item is null ? null : new ProductDto(item.Id, item.Name, item.Description, item.Price, item.Stock);
+        return item is null
+            ? null
+            : new ProductDto(item.Id, item.Name, item.Description, item.Price, item.Stock);
     }
 }
 
 // Same-service create already upserts Mongo; keep this handler for idempotent redelivery only.
-public sealed class ProductCreatedIntegrationEventHandler(ProductReadStore readStore)
+public sealed class ProductCreatedIntegrationEventHandler(
+    ProductReadStore readStore,
+    IMemoryCache cache,
+    IOutputCacheStore outputCache)
 {
-    public Task Handle(ProductCreatedIntegrationEvent message) =>
-        readStore.UpsertAsync(new ProductReadModel
+    public async Task Handle(ProductCreatedIntegrationEvent message)
+    {
+        await readStore.UpsertAsync(new ProductReadModel
         {
             Id = message.ProductId,
             Name = message.Name,
@@ -85,9 +105,15 @@ public sealed class ProductCreatedIntegrationEventHandler(ProductReadStore readS
             Price = message.Price,
             Stock = message.Stock
         });
+        await ProductCache.InvalidateAsync(cache, outputCache);
+    }
 }
 
-public sealed class OrderCreatedIntegrationEventHandler(CatalogDbContext db, ProductReadStore readStore)
+public sealed class OrderCreatedIntegrationEventHandler(
+    CatalogDbContext db,
+    ProductReadStore readStore,
+    IMemoryCache cache,
+    IOutputCacheStore outputCache)
 {
     public async Task Handle(OrderCreatedIntegrationEvent message)
     {
@@ -98,16 +124,37 @@ public sealed class OrderCreatedIntegrationEventHandler(CatalogDbContext db, Pro
             return;
         }
 
-        foreach (var line in message.Lines)
+        var productIds = message.Lines.Select(x => x.ProductId).Distinct().ToArray();
+        if (productIds.Length == 0)
         {
-            var product = await db.Products.FirstOrDefaultAsync(x => x.Id == line.ProductId);
-            if (product is null)
+            return;
+        }
+
+        // One round-trip instead of N+1 queries per order line.
+        var products = await db.Products
+            .AsTracking()
+            .Where(x => productIds.Contains(x.Id))
+            .ToListAsync();
+
+        if (products.Count == 0)
+        {
+            return;
+        }
+
+        var quantityByProduct = message.Lines
+            .GroupBy(x => x.ProductId)
+            .ToDictionary(g => g.Key, g => g.Sum(x => x.Quantity));
+
+        var readModels = new List<ProductReadModel>(products.Count);
+        foreach (var product in products)
+        {
+            if (!quantityByProduct.TryGetValue(product.Id, out var qty))
             {
                 continue;
             }
 
-            product.UpdateStock(Math.Max(0, product.Stock - line.Quantity));
-            await readStore.UpsertAsync(new ProductReadModel
+            product.UpdateStock(Math.Max(0, product.Stock - qty));
+            readModels.Add(new ProductReadModel
             {
                 Id = product.Id,
                 Name = product.Name,
@@ -118,6 +165,22 @@ public sealed class OrderCreatedIntegrationEventHandler(CatalogDbContext db, Pro
         }
 
         await db.SaveChangesAsync();
+        await readStore.BulkUpsertAsync(readModels);
+        await ProductCache.InvalidateAsync(cache, outputCache);
+    }
+}
+
+internal static class ProductCache
+{
+    public const string ListKey = "catalogs:products:list";
+
+    public static async Task InvalidateAsync(
+        IMemoryCache cache,
+        IOutputCacheStore outputCache,
+        CancellationToken ct = default)
+    {
+        cache.Remove(ListKey);
+        await outputCache.EvictByTagAsync("products", ct);
     }
 }
 
@@ -132,13 +195,15 @@ public static class ProductEndpoints
         });
 
         group.MapGet("/", async (IMediator mediator, CancellationToken ct) =>
-            Results.Ok(await mediator.Send(new GetProductsQuery(), ct)));
+            Results.Ok(await mediator.Send(new GetProductsQuery(), ct)))
+            .CacheOutput("products");
 
         group.MapGet("/{id:guid}", async (Guid id, IMediator mediator, CancellationToken ct) =>
         {
             var result = await mediator.Send(new GetProductByIdQuery(id), ct);
             return result is null ? Results.NotFound() : Results.Ok(result);
-        });
+        })
+        .CacheOutput("products");
 
         return group;
     }

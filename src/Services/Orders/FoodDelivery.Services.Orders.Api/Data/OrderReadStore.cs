@@ -34,11 +34,9 @@ public sealed class OrderReadStore
 
     public async Task EnsureIndexesAsync(CancellationToken ct = default)
     {
+        // Id maps to Mongo _id (already unique).
         var indexes = new[]
         {
-            new CreateIndexModel<OrderReadModel>(
-                Builders<OrderReadModel>.IndexKeys.Ascending(x => x.Id),
-                new CreateIndexOptions { Unique = true, Name = "ux_orders_read_id" }),
             new CreateIndexModel<OrderReadModel>(
                 Builders<OrderReadModel>.IndexKeys.Descending(x => x.CreatedAtUtc),
                 new CreateIndexOptions { Name = "ix_orders_read_created" }),

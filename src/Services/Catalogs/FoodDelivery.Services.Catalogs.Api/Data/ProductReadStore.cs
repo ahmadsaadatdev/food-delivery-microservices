@@ -29,16 +29,11 @@ public sealed class ProductReadStore
 
     public async Task EnsureIndexesAsync(CancellationToken ct = default)
     {
+        // Id maps to Mongo _id (already unique). Index Name for catalog lookups.
         await Collection.Indexes.CreateOneAsync(
             new CreateIndexModel<ProductReadModel>(
-                Builders<ProductReadModel>.IndexKeys.Ascending(x => x.Id),
-                new CreateIndexOptions { Unique = true, Name = "ux_products_read_id" }),
-            cancellationToken: ct);
-
-        await Markers.Indexes.CreateOneAsync(
-            new CreateIndexModel<ProcessedMarker>(
-                Builders<ProcessedMarker>.IndexKeys.Ascending(x => x.Id),
-                new CreateIndexOptions { Unique = true, Name = "ux_processed_events_id" }),
+                Builders<ProductReadModel>.IndexKeys.Ascending(x => x.Name),
+                new CreateIndexOptions { Name = "ix_products_read_name" }),
             cancellationToken: ct);
     }
 

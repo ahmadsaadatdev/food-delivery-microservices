@@ -19,6 +19,7 @@ Thumbs.db
 ## Test / coverage
 TestResults/
 coverage/
+tests/FoodDelivery.StressTests/stress-reports/
 
 ## Aspire
 .aspire/

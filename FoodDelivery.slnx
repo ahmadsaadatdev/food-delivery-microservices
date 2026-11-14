@@ -26,5 +26,6 @@
   <Folder Name="/tests/">
     <Project Path="tests/FoodDelivery.ArchitectureTests/FoodDelivery.ArchitectureTests.csproj" />
     <Project Path="tests/FoodDelivery.StressTests/FoodDelivery.StressTests.csproj" />
+    <Project Path="tests/FoodDelivery.UnitTests/FoodDelivery.UnitTests.csproj" />
   </Folder>
 </Solution>
